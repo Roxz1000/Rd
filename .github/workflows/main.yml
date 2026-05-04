@@ -17,29 +17,54 @@ jobs:
     
     - uses: android-actions/setup-android@v3
     
-    - name: Extract ZIP
+    - name: Extract and Fix All Files
       run: |
-        unzip -o Ads-maker.zip -d extracted
-        # Find actual project folder
-        PROJECT_DIR=$(find extracted -name "gradlew" -type f | head -1 | xargs dirname)
-        echo "Project found at: $PROJECT_DIR"
-        mv "$PROJECT_DIR" project
-        cd project
-        chmod +x gradlew
-        ls -la
-    
+        unzip -o Ads-maker.zip
+        # Find gradlew file
+        GRADLEW_PATH=$(find . -name "gradlew" -type f | head -1)
+        echo "Found gradlew at: $GRADLEW_PATH"
+        
+        # Get project directory
+        PROJECT_DIR=$(dirname "$GRADLEW_PATH")
+        echo "Project dir: $PROJECT_DIR"
+        
+        # Fix gradlew permission
+        chmod +x "$GRADLEW_PATH"
+        
+        # Check if gradlew works
+        ls -la "$GRADLEW_PATH"
+        file "$GRADLEW_PATH"
+        
+        # Create wrapper jar agar missing hai
+        if [ ! -f "$PROJECT_DIR/gradle/wrapper/gradle-wrapper.jar" ]; then
+          echo "Downloading gradle wrapper..."
+          cd "$PROJECT_DIR"
+          if command -v gradle &> /dev/null; then
+            gradle wrapper
+          else
+            # Manual download wrapper
+            wget -q https://raw.githubusercontent.com/gradle/gradle/v8.5.0/gradlew -O gradlew
+            chmod +x gradlew
+            mkdir -p gradle/wrapper
+            wget -q https://github.com/gradle/gradle/raw/v8.5.0/gradle/wrapper/gradle-wrapper.jar -O gradle/wrapper/gradle-wrapper.jar
+          fi
+        fi
+
     - name: Setup local.properties
       run: |
-        cd project
+        PROJECT_DIR=$(find . -name "gradlew" -type f | head -1 | xargs dirname)
+        cd "$PROJECT_DIR"
         echo "sdk.dir=$ANDROID_HOME" > local.properties
-    
+
     - name: Build Debug APK
       run: |
-        cd project
-        ./gradlew assembleDebug
-    
+        PROJECT_DIR=$(find . -name "gradlew" -type f | head -1 | xargs dirname)
+        cd "$PROJECT_DIR"
+        ls -la
+        ./gradlew assembleDebug --info
+
     - name: Upload APK
       uses: actions/upload-artifact@v4
       with:
         name: APK
-        path: project/app/build/outputs/apk/debug/*.apk
+        path: "**/app/build/outputs/apk/debug/*.apk"
