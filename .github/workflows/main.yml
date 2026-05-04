@@ -1,4 +1,4 @@
-name: Build APK from ZIP
+name: Build from ZIP
 
 on:
   workflow_dispatch:
@@ -8,73 +8,38 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
-    - name: Checkout Code
-      uses: actions/checkout@v4
+    - uses: actions/checkout@v4
     
-    - name: Setup Java 17
-      uses: actions/setup-java@v4
+    - uses: actions/setup-java@v4
       with:
         java-version: '17'
         distribution: 'temurin'
     
-    - name: Setup Android SDK
-      uses: android-actions/setup-android@v3
-      with:
-        packages: 'platforms;android-34 build-tools;34.0.0'
+    - uses: android-actions/setup-android@v3
     
-    - name: Extract ZIP and Fix Structure
+    - name: Extract ZIP
       run: |
-        mkdir -p project
-        unzip Ads-maker.zip -d temp_extract
-        # Check karo actual folder structure
-        ls -la temp_extract/
-        # Agar double nested hai to correct folder mein move karo
-        if [ -d "temp_extract/Ads-maker/Ads-maker" ]; then
-          mv temp_extract/Ads-maker/Ads-maker/* project/
-        elif [ -d "temp_extract/Ads-maker" ]; then
-          mv temp_extract/Ads-maker/* project/
-        else
-          mv temp_extract/* project/
-        fi
+        unzip -o Ads-maker.zip -d extracted
+        # Find actual project folder
+        PROJECT_DIR=$(find extracted -name "gradlew" -type f | head -1 | xargs dirname)
+        echo "Project found at: $PROJECT_DIR"
+        mv "$PROJECT_DIR" project
         cd project
         chmod +x gradlew
-        ls -la  # Debug: check files
-
-    - name: Create Keystore
-      run: |
-        cd project
-        keytool -genkey -v \
-          -keystore keystore/adsviewer.jks \
-          -keyalg RSA -keysize 2048 -validity 10000 \
-          -alias adsviewer \
-          -storepass android123 \
-          -keypass android123 \
-          -dname "CN=AdsMaker, OU=Dev, O=Company, L=City, ST=State, C=IN"
-
-    - name: Update local.properties
+        ls -la
+    
+    - name: Setup local.properties
       run: |
         cd project
         echo "sdk.dir=$ANDROID_HOME" > local.properties
-        echo "storeFile=keystore/adsviewer.jks" >> local.properties
-        echo "storePassword=android123" >> local.properties
-        echo "keyAlias=adsviewer" >> local.properties
-        echo "keyPassword=android123" >> local.properties
-        cat local.properties
-
+    
     - name: Build Debug APK
       run: |
         cd project
         ./gradlew assembleDebug
-
-    - name: Build Release APK
-      run: |
-        cd project
-        ./gradlew assembleRelease
-
-    - name: Upload APKs
+    
+    - name: Upload APK
       uses: actions/upload-artifact@v4
       with:
-        name: All-APKs
-        path: |
-          project/app/build/outputs/apk/debug/*.apk
-          project/app/build/outputs/apk/release/*.apk
+        name: APK
+        path: project/app/build/outputs/apk/debug/*.apk
