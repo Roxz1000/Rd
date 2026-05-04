@@ -1,0 +1,68 @@
+name: Build APK from ZIP
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+    
+    - name: Setup Java 17
+      uses: actions/setup-java@v4
+      with:
+        java-version: '17'
+        distribution: 'temurin'
+    
+    - name: Setup Android SDK
+      uses: android-actions/setup-android@v3
+      with:
+        packages: 'platforms;android-34 build-tools;34.0.0'
+    
+    - name: Extract ZIP file
+      run: |
+        # Aapke ZIP file ka naam yahan daalein
+        unzip Ads-maker.zip -d Ads-maker
+        cd Ads-maker
+        chmod +x gradlew
+    
+    - name: Create Keystore
+      run: |
+        cd Ads-maker
+        keytool -genkey -v \
+          -keystore keystore/adsviewer.jks \
+          -keyalg RSA -keysize 2048 -validity 10000 \
+          -alias adsviewer \
+          -storepass android123 \
+          -keypass android123 \
+          -dname "CN=AdsMaker, OU=Dev, O=Company, L=City, ST=State, C=IN"
+    
+    - name: Update local.properties
+      run: |
+        cd Ads-maker
+        echo "sdk.dir=$ANDROID_HOME" > local.properties
+        echo "storeFile=keystore/adsviewer.jks" >> local.properties
+        echo "storePassword=android123" >> local.properties
+        echo "keyAlias=adsviewer" >> local.properties
+        echo "keyPassword=android123" >> local.properties
+    
+    - name: Build Debug APK
+      run: |
+        cd Ads-maker
+        ./gradlew assembleDebug
+    
+    - name: Build Release APK
+      run: |
+        cd Ads-maker
+        ./gradlew assembleRelease
+    
+    - name: Upload APKs
+      uses: actions/upload-artifact@v4
+      with:
+        name: All-APKs
+        path: |
+          Ads-maker/app/build/outputs/apk/debug/*.apk
+          Ads-maker/app/build/outputs/apk/release/*.apk
