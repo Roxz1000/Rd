@@ -1,4 +1,4 @@
-name: Ultimate Build
+name: Build APK Final
 
 on:
   workflow_dispatch:
@@ -10,47 +10,101 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     
-    - uses: actions/setup-java@v4
+    - name: Setup Java 17
+      uses: actions/setup-java@v4
       with:
         java-version: '17'
         distribution: 'temurin'
     
-    - uses: android-actions/setup-android@v3
+    - name: Setup Android SDK
+      uses: android-actions/setup-android@v3
+      with:
+        packages: 'platforms;android-34 build-tools;34.0.0'
     
-    - name: Extract & Setup Fresh
+    - name: Extract ZIP
       run: |
-        unzip -o Ads-maker.zip -d src
+        unzip -o Ads-maker.zip
         mkdir -p project
-        cp -r src/Ads-maker/Ads-maker/* project/ 2>/dev/null || cp -r src/Ads-maker/* project/ 2>/dev/null || cp -r src/* project/
+        
+        # Copy files (handle double folder)
+        if [ -d "Ads-maker/Ads-maker" ]; then
+          cp -r Ads-maker/Ads-maker/* project/
+        elif [ -d "Ads-maker" ]; then
+          cp -r Ads-maker/* project/
+        fi
+        
+        cd project
+        chmod +x gradlew
+        ls -la
 
-    - name: Create Fresh Gradle Wrapper
+    - name: Fix settings.gradle
       run: |
         cd project
-        # Delete purani gradlew
-        rm -f gradlew gradlew.bat
-        rm -rf gradle/wrapper/*.jar
-        
-        # Install gradle
-        sudo apt-get update -qq && sudo apt-get install -y -qq gradle
-        
-        # Generate nayi gradlew
-        gradle wrapper --gradle-version 7.5
-        chmod +x gradlew
-        ls -la gradlew gradle/wrapper/
+        cat > settings.gradle << 'EOF'
+        pluginManagement {
+            repositories {
+                google()
+                mavenCentral()
+                gradlePluginPortal()
+            }
+        }
+        dependencyResolutionManagement {
+            repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+            repositories {
+                google()
+                mavenCentral()
+            }
+        }
+        rootProject.name = "Ads-maker"
+        include ':app'
+        EOF
 
-    - name: Setup local.properties
+    - name: Fix gradle wrapper
+      run: |
+        cd project
+        cat > gradle/wrapper/gradle-wrapper.properties << 'EOF'
+        distributionBase=GRADLE_USER_HOME
+        distributionPath=wrapper/dists
+        distributionUrl=https\://services.gradle.org/distributions/gradle-8.4-bin.zip
+        zipStoreBase=GRADLE_USER_HOME
+        zipStorePath=wrapper/dists
+        EOF
+
+    - name: Setup local.properties with keystore
       run: |
         cd project
         echo "sdk.dir=$ANDROID_HOME" > local.properties
-        cat local.properties
+        
+        # Generate keystore agar nahi hai
+        if [ ! -f "keystore/adsviewer.jks" ]; then
+          mkdir -p keystore
+          keytool -genkey -v \
+            -keystore keystore/adsviewer.jks \
+            -keyalg RSA -keysize 2048 -validity 10000 \
+            -alias adsviewer \
+            -storepass adsviewer123 \
+            -keypass adsviewer123 \
+            -dname "CN=AdsMaker, OU=Dev, O=Company, L=City, ST=State, C=IN"
+        fi
+        
+        echo "storeFile=keystore/adsviewer.jks" >> local.properties
+        echo "storePassword=adsviewer123" >> local.properties
+        echo "keyAlias=adsviewer" >> local.properties
+        echo "keyPassword=adsviewer123" >> local.properties
 
     - name: Build APK
       run: |
         cd project
-        ./gradlew assembleDebug
+        export KEYSTORE_FILE="keystore/adsviewer.jks"
+        export KEYSTORE_PASSWORD="adsviewer123"
+        export KEY_ALIAS="adsviewer"
+        export KEY_PASSWORD="adsviewer123"
+        ./gradlew assembleDebug --no-daemon --stacktrace
 
     - name: Upload APK
       uses: actions/upload-artifact@v4
       with:
-        name: APK
-        path: "**/app/build/outputs/apk/debug/*.apk"
+        name: AdsMaker-APK
+        path: |
+          project/app/build/outputs/apk/debug/*.apk
+          project/app/build/outputs/apk/release/*.apk
