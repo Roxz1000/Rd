@@ -22,16 +22,27 @@ jobs:
       with:
         packages: 'platforms;android-34 build-tools;34.0.0'
     
-    - name: Extract ZIP file
+    - name: Extract ZIP and Fix Structure
       run: |
-        # Aapke ZIP file ka naam yahan daalein
-        unzip Ads-maker.zip -d Ads-maker
-        cd Ads-maker
+        mkdir -p project
+        unzip Ads-maker.zip -d temp_extract
+        # Check karo actual folder structure
+        ls -la temp_extract/
+        # Agar double nested hai to correct folder mein move karo
+        if [ -d "temp_extract/Ads-maker/Ads-maker" ]; then
+          mv temp_extract/Ads-maker/Ads-maker/* project/
+        elif [ -d "temp_extract/Ads-maker" ]; then
+          mv temp_extract/Ads-maker/* project/
+        else
+          mv temp_extract/* project/
+        fi
+        cd project
         chmod +x gradlew
-    
+        ls -la  # Debug: check files
+
     - name: Create Keystore
       run: |
-        cd Ads-maker
+        cd project
         keytool -genkey -v \
           -keystore keystore/adsviewer.jks \
           -keyalg RSA -keysize 2048 -validity 10000 \
@@ -39,30 +50,31 @@ jobs:
           -storepass android123 \
           -keypass android123 \
           -dname "CN=AdsMaker, OU=Dev, O=Company, L=City, ST=State, C=IN"
-    
+
     - name: Update local.properties
       run: |
-        cd Ads-maker
+        cd project
         echo "sdk.dir=$ANDROID_HOME" > local.properties
         echo "storeFile=keystore/adsviewer.jks" >> local.properties
         echo "storePassword=android123" >> local.properties
         echo "keyAlias=adsviewer" >> local.properties
         echo "keyPassword=android123" >> local.properties
-    
+        cat local.properties
+
     - name: Build Debug APK
       run: |
-        cd Ads-maker
+        cd project
         ./gradlew assembleDebug
-    
+
     - name: Build Release APK
       run: |
-        cd Ads-maker
+        cd project
         ./gradlew assembleRelease
-    
+
     - name: Upload APKs
       uses: actions/upload-artifact@v4
       with:
         name: All-APKs
         path: |
-          Ads-maker/app/build/outputs/apk/debug/*.apk
-          Ads-maker/app/build/outputs/apk/release/*.apk
+          project/app/build/outputs/apk/debug/*.apk
+          project/app/build/outputs/apk/release/*.apk
