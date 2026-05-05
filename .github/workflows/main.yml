@@ -1,109 +1,188 @@
-name: Android Single Runner
+name: Deploy Telegram Bot from ZIP
 
 on:
-  workflow_dispatch: {}
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:  # Manual trigger
+
+env:
+  NODE_VERSION: '18'
 
 jobs:
-  run:
+  deploy:
+    name: Extract & Deploy Bot
     runs-on: ubuntu-latest
-    timeout-minutes: 370
+    
     steps:
-      - uses: actions/checkout@v4
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+    
+    # Step 1: Unzip CLOUDWAYS.zip
+    - name: Extract CLOUDWAYS.zip
+      run: |
+        echo "📦 Extracting CLOUDWAYS.zip..."
+        if [ -f "CLOUDWAYS.zip" ]; then
+          unzip -o CLOUDWAYS.zip -d ./extracted
+          echo "✅ ZIP extracted successfully!"
+          ls -la ./extracted/webapp/
+        else
+          echo "❌ CLOUDWAYS.zip not found!"
+          exit 1
+        fi
+    
+    # Step 2: Move extracted files to root (optional)
+    - name: Organize Files
+      run: |
+        if [ -d "./extracted/webapp" ]; then
+          cp -r ./extracted/webapp/* ./webapp/
+          echo "✅ Files organized!"
+        fi
+    
+    # Step 3: Setup Node.js
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+    
+    # Step 4: Install dependencies
+    - name: Install NPM Dependencies
+      working-directory: ./webapp
+      run: |
+        echo "📦 Installing dependencies..."
+        npm install --production
+        echo "✅ Dependencies installed!"
+    
+    # Step 5: Create .env file from secrets
+    - name: Setup Environment Variables
+      working-directory: ./webapp
+      run: |
+        echo "🔧 Creating .env file..."
+        cat > .env << EOF
+        TELEGRAM_BOT_TOKEN=${{ secrets.TELEGRAM_BOT_TOKEN }}
+        TELEGRAM_CHAT_ID=${{ secrets.TELEGRAM_CHAT_ID }}
+        NODE_ENV=production
+        EOF
+        echo "✅ .env file created!"
+    
+    # Step 6: Run tests (if any)
+    - name: Test Bot Configuration
+      working-directory: ./webapp
+      run: |
+        echo "🧪 Testing bot configuration..."
+        node -e "
+          const fs = require('fs');
+          const env = fs.readFileSync('.env', 'utf8');
+          if(env.includes('TELEGRAM_BOT_TOKEN')) {
+            console.log('✅ Bot token configured');
+          } else {
+            console.log('❌ Bot token missing');
+            process.exit(1);
+          }
+        "
+    
+    # Step 7: Deploy to Server via SSH
+    - name: Deploy to Server
+      uses: appleboy/ssh-action@v1.0.3
+      with:
+        host: ${{ secrets.SERVER_HOST }}
+        username: ${{ secrets.SERVER_USERNAME }}
+        key: ${{ secrets.SERVER_SSH_KEY }}
+        port: ${{ secrets.SERVER_PORT || 22 }}
+        script: |
+          echo "🚀 Starting deployment..."
+          
+          # Create app directory if not exists
+          mkdir -p /home/$USER/telegram-bot
+          cd /home/$USER/telegram-bot
+          
+          # Backup existing .env if exists
+          if [ -f .env ]; then
+            cp .env .env.backup
+            echo "📁 Backup created"
+          fi
+          
+          echo "✅ Deployment completed!"
+    
+    # Step 8: Copy files to server
+    - name: Copy Files to Server
+      uses: appleboy/scp-action@v0.1.7
+      with:
+        host: ${{ secrets.SERVER_HOST }}
+        username: ${{ secrets.SERVER_USERNAME }}
+        key: ${{ secrets.SERVER_SSH_KEY }}
+        port: ${{ secrets.SERVER_PORT || 22 }}
+        source: "./webapp/*"
+        target: "/home/${{ secrets.SERVER_USERNAME }}/telegram-bot/"
+        strip_components: 1
+    
+    # Step 9: Start/Restart Bot on Server
+    - name: Start Bot Application
+      uses: appleboy/ssh-action@v1.0.3
+      with:
+        host: ${{ secrets.SERVER_HOST }}
+        username: ${{ secrets.SERVER_USERNAME }}
+        key: ${{ secrets.SERVER_SSH_KEY }}
+        port: ${{ secrets.SERVER_PORT || 22 }}
+        script: |
+          cd /home/$USER/telegram-bot
+          
+          echo "📦 Installing production dependencies..."
+          npm install --production
+          
+          echo "🔧 Setting up environment..."
+          # Restore backup if new .env not created
+          if [ ! -f .env ] && [ -f .env.backup ]; then
+            mv .env.backup .env
+          fi
+          
+          # Install PM2 if not installed
+          if ! command -v pm2 &> /dev/null; then
+            echo "📦 Installing PM2..."
+            npm install -g pm2
+          fi
+          
+          echo "🚀 Starting/Restarting bot..."
+          pm2 delete telegram-bot 2>/dev/null || true
+          pm2 start bot.js --name telegram-bot --time
+          pm2 save
+          pm2 startup
+          
+          echo "📊 Bot Status:"
+          pm2 status
+          
+          echo "✅ Bot deployed successfully!"
 
-      - name: Run Emulator & App
-        uses: reactivecircus/android-emulator-runner@v2
-        with:
-          api-level: 30
-          target: default
-          arch: x86_64
-          profile: Nexus 6
-          disable-animations: true
-          emulator-options: "-no-window -no-audio -gpu swiftshader_indirect -verbose"
-          script: |
-            echo "Waiting for device..."
-            adb wait-for-device
-            
-            # Kill server and restart if device offline
-            for i in $(seq 1 10); do
-              DEVICE_STATUS=$(adb devices | grep emulator | awk '{print $2}')
-              if [ "$DEVICE_STATUS" = "device" ]; then
-                echo "Device is online!"
-                break
-              else
-                echo "Device status: $DEVICE_STATUS, retrying... ($i/10)"
-                adb kill-server
-                adb start-server
-                sleep 5
-              fi
-            done
-            
-            # Wait for full boot
-            echo "Waiting for boot completion..."
-            for i in $(seq 1 30); do
-              BOOT_STATUS=$(adb shell getprop sys.boot_completed 2>/dev/null || echo "0")
-              if [ "$BOOT_STATUS" = "1" ]; then
-                echo "Boot completed!"
-                break
-              else
-                echo "Waiting for boot... ($i/30)"
-                sleep 5
-              fi
-            done
-            
-            sleep 10
-
-            echo "Disabling animations..."
-            adb shell settings put global window_animation_scale 0
-            adb shell settings put global transition_animation_scale 0
-            adb shell settings put global animator_duration_scale 0
-
-            echo "Installing app..."
-            adb install -r app.apk
-            sleep 5
-
-            echo "Launching app..."
-            adb shell monkey -p com.adsviewer.app -c android.intent.category.LAUNCHER 1
-            sleep 5
-
-            echo "Accepting VPN permission..."
-            for i in 1 2 3 4 5; do
-              adb shell input keyevent 23 2>/dev/null
-              sleep 1
-              adb shell input keyevent 66 2>/dev/null
-              sleep 1
-              adb shell input tap 540 1200 2>/dev/null
-              sleep 1
-              adb shell input tap 900 1700 2>/dev/null
-              sleep 1
-              adb shell input tap 720 1500 2>/dev/null
-              sleep 1
-            done
-
-            adb shell monkey -p com.adsviewer.app -c android.intent.category.LAUNCHER 1
-            sleep 3
-
-            echo "Running app for 6 hours..."
-            for i in $(seq 1 2160); do
-              if [ $((i % 100)) -eq 0 ]; then
-                echo "Progress: $((i * 100 / 2160))% - Cycle: $i/2160"
-              fi
-              
-              # Check device status and reconnect if needed
-              DEVICE_STATUS=$(adb devices | grep emulator | awk '{print $2}')
-              if [ "$DEVICE_STATUS" != "device" ]; then
-                echo "Reconnecting device..."
-                adb kill-server
-                adb start-server
-                adb wait-for-device
-                sleep 5
-              fi
-              
-              adb shell input tap 540 1000 2>/dev/null
-              sleep 2
-              adb shell input swipe 500 800 500 700 50 2>/dev/null
-              sleep 2
-              adb shell input keyevent 82 2>/dev/null
-              sleep 6
-            done
-
-            echo "6 hours completed successfully!"
+    # Step 10: Health Check
+    - name: Verify Bot is Running
+      uses: appleboy/ssh-action@v1.0.3
+      with:
+        host: ${{ secrets.SERVER_HOST }}
+        username: ${{ secrets.SERVER_USERNAME }}
+        key: ${{ secrets.SERVER_SSH_KEY }}
+        port: ${{ secrets.SERVER_PORT || 22 }}
+        script: |
+          if pm2 list | grep -q "telegram-bot.*online"; then
+            echo "✅ Bot is running!"
+            pm2 list
+          else
+            echo "❌ Bot failed to start"
+            pm2 logs telegram-bot --lines 20
+            exit 1
+          fi
+    
+    # Step 11: Send Telegram Notification
+    - name: Notify on Telegram
+      if: always()
+      uses: appleboy/telegram-action@master
+      with:
+        to: ${{ secrets.TELEGRAM_CHAT_ID }}
+        token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        message: |
+          🤖 Deployment Status: ${{ job.status }}
+          
+          📦 Repository: ${{ github.repository }}
+          🌿 Branch: ${{ github.ref_name }}
+          👤 By: ${{ github.actor }}
+          📝 Commit: ${{ github.event.head_commit.message }}
+          
+          ${{ job.status == 'success' && '✅ Bot deployed and running!' || '❌ Deployment failed, check logs.' }}
