@@ -1,88 +1,29 @@
-name: Deploy Telegram Bot
+name: Run Telegram Bot 24/7
 
 on:
+  schedule:
+    - cron: '0 */6 * * *'  # Har 6 ghante auto restart
   push:
     branches: [ main, master ]
   workflow_dispatch:
 
-env:
-  NODE_VERSION: '18'
-
 jobs:
-  deploy:
-    name: Extract & Deploy Bot
+  run-bot:
     runs-on: ubuntu-latest
+    timeout-minutes: 360
     
     steps:
-    - name: Checkout Repository
+    - name: Checkout
       uses: actions/checkout@v4
     
-    - name: Extract ZIP & Find webapp
+    - name: Setup Bot
       run: |
-        echo "📦 Searching for ZIP file..."
-        ZIP_FILE=$(ls *.zip 2>/dev/null | head -1)
-        
-        if [ -z "$ZIP_FILE" ]; then
-          echo "❌ No ZIP file found!"
-          exit 1
-        fi
-        
-        echo "📦 Extracting $ZIP_FILE..."
-        unzip -o "$ZIP_FILE" -d ./extracted
-        
-        WEBAPP_PATH=$(find ./extracted -type d -name "webapp" | head -1)
-        
-        if [ -z "$WEBAPP_PATH" ]; then
-          echo "❌ webapp folder not found!"
-          exit 1
-        fi
-        
-        echo "✅ Found webapp at: $WEBAPP_PATH"
+        unzip -o *.zip -d ./extracted
+        WEBAPP=$(find ./extracted -type d -name "webapp" | head -1)
         mkdir -p ./webapp
-        cp -r $WEBAPP_PATH/* ./webapp/
-        echo "📁 Files:"
-        ls -la ./webapp/
-
-    - name: Setup Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: ${{ env.NODE_VERSION }}
-
-    - name: Install Dependencies
+        cp -r $WEBAPP/* ./webapp/
+        cd webapp && npm install --production
+    
+    - name: Run Bot 6 Hours
       working-directory: ./webapp
-      run: |
-        npm install --production
-        echo "✅ Dependencies installed"
-
-    - name: Copy to Server
-      uses: appleboy/scp-action@v0.1.7
-      with:
-        host: ${{ secrets.SERVER_HOST }}
-        username: ${{ secrets.SERVER_USERNAME }}
-        key: ${{ secrets.SERVER_SSH_KEY }}
-        port: ${{ secrets.SERVER_PORT || 22 }}
-        source: "./webapp/*"
-        target: "/home/${{ secrets.SERVER_USERNAME }}/telegram-bot/"
-        strip_components: 1
-
-    - name: Start Bot
-      uses: appleboy/ssh-action@v1.0.3
-      with:
-        host: ${{ secrets.SERVER_HOST }}
-        username: ${{ secrets.SERVER_USERNAME }}
-        key: ${{ secrets.SERVER_SSH_KEY }}
-        port: ${{ secrets.SERVER_PORT || 22 }}
-        script: |
-          cd /home/$USER/telegram-bot
-          npm install --production
-          
-          if ! command -v pm2 &> /dev/null; then
-            npm install -g pm2
-          fi
-          
-          pm2 delete telegram-bot 2>/dev/null || true
-          pm2 start bot.js --name telegram-bot
-          pm2 save
-          
-          echo "✅ Bot Status:"
-          pm2 list
+      run: node bot.js
