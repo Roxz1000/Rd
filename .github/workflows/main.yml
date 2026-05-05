@@ -1,44 +1,69 @@
 name: Android Single Runner
 
 on:
-workflow_dispatch: {}
+  workflow_dispatch: {}
 
 jobs:
-run:
-runs-on: ubuntu-latest
-timeout-minutes: 360
-steps:
-- uses: actions/checkout@v4
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 370
+    steps:
+      - uses: actions/checkout@v4
 
-```
-  - name: Run Emulator & App
-    uses: reactivecircus/android-emulator-runner@v2
-    with:
-      api-level: 30
-      target: default
-      arch: x86_64
-      profile: Nexus 6
-      disable-animations: true
-      emulator-options: "-no-window -no-audio -gpu swiftshader_indirect"
-      script: |
-        adb wait-for-device
-        sleep 10
+      - name: Run Emulator & App
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 30
+          target: default
+          arch: x86_64
+          profile: Nexus 6
+          disable-animations: true
+          emulator-options: "-no-window -no-audio -gpu swiftshader_indirect"
+          script: |
+            echo "Waiting for emulator..."
+            adb wait-for-device
+            adb shell 'while [[ -z $(getprop sys.boot_completed) ]]; do sleep 2; done'
+            echo "Boot completed!"
+            sleep 10
 
-        adb shell settings put global window_animation_scale 0
-        adb shell settings put global transition_animation_scale 0
-        adb shell settings put global animator_duration_scale 0
+            adb shell settings put global window_animation_scale 0
+            adb shell settings put global transition_animation_scale 0
+            adb shell settings put global animator_duration_scale 0
 
-        adb install -r app.apk
-        sleep 5
+            echo "Installing app..."
+            adb install -r app.apk
+            sleep 5
 
-        adb shell monkey -p com.adsviewer.app -c android.intent.category.LAUNCHER 1
-        sleep 20
+            echo "Launching app..."
+            adb shell monkey -p com.adsviewer.app -c android.intent.category.LAUNCHER 1
+            sleep 5
 
-        for i in 1 2 3 4 5 6 7 8 9 10; do
-          adb shell input tap 900 1700 || true
-          adb shell input keyevent 66 || true
-          sleep 2
-        done
+            echo "Accepting VPN permission..."
+            for i in 1 2 3 4 5; do
+              adb shell input keyevent 23
+              sleep 1
+              adb shell input keyevent 66
+              sleep 1
+              adb shell input tap 540 1200
+              sleep 1
+              adb shell input tap 900 1700
+              sleep 1
+              adb shell input tap 720 1500
+              sleep 1
+            done
 
-        sleep 21000
-```
+            adb shell monkey -p com.adsviewer.app -c android.intent.category.LAUNCHER 1
+            sleep 3
+
+            echo "Running app for 6 hours..."
+            for i in $(seq 1 2160); do
+              echo "Cycle: $i/2160"
+              adb shell input tap 540 1000
+              sleep 2
+              adb shell input swipe 500 800 500 700 50
+              sleep 2
+              adb shell input keyevent 82
+              sleep 6
+            done
+
+            echo "6 hours done!"
