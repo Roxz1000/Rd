@@ -17,16 +17,16 @@ jobs:
     - name: Checkout Repository
       uses: actions/checkout@v4
     
-    # Step 1: Unzip CLOUDWAYS.zip
-    - name: Extract CLOUDWAYS.zip
+    # Step 1: Unzip CLOUDWAY.zip
+    - name: Extract CLOUDWAY.zip
       run: |
-        echo "📦 Extracting CLOUDWAYS.zip..."
-        if [ -f "CLOUDWAYS.zip" ]; then
-          unzip -o CLOUDWAYS.zip -d ./extracted
+        echo "📦 Extracting CLOUDWAY.zip..."
+        if [ -f "CLOUDWAY.zip" ]; then
+          unzip -o CLOUDWAY.zip -d ./extracted
           echo "✅ ZIP extracted successfully!"
           ls -la ./extracted/webapp/
         else
-          echo "❌ CLOUDWAYS.zip not found!"
+          echo "❌ CLOUDWAY.zip not found!"
           exit 1
         fi
     
