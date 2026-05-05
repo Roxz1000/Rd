@@ -30,7 +30,6 @@ jobs:
         echo "📦 Extracting $ZIP_FILE..."
         unzip -o "$ZIP_FILE" -d ./extracted
         
-        # Find webapp folder automatically
         WEBAPP_PATH=$(find ./extracted -type d -name "webapp" | head -1)
         
         if [ -z "$WEBAPP_PATH" ]; then
@@ -39,10 +38,9 @@ jobs:
         fi
         
         echo "✅ Found webapp at: $WEBAPP_PATH"
-        
-        # Copy to working directory
         mkdir -p ./webapp
         cp -r $WEBAPP_PATH/* ./webapp/
+        echo "📁 Files:"
         ls -la ./webapp/
 
     - name: Setup Node.js
@@ -52,7 +50,9 @@ jobs:
 
     - name: Install Dependencies
       working-directory: ./webapp
-      run: npm install --production
+      run: |
+        npm install --production
+        echo "✅ Dependencies installed"
 
     - name: Copy to Server
       uses: appleboy/scp-action@v0.1.7
@@ -83,14 +83,6 @@ jobs:
           pm2 delete telegram-bot 2>/dev/null || true
           pm2 start bot.js --name telegram-bot
           pm2 save
+          
+          echo "✅ Bot Status:"
           pm2 list
-
-    - name: Notify Telegram
-      if: always()
-      uses: appleboy/telegram-action@master
-      with:
-        to: ${{ secrets.TELEGRAM_CHAT_ID }}
-        token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-        message: |
-          🤖 Bot: ${{ job.status }}
-          ${{ job.status == 'success' && '✅ Deployed!' || '❌ Failed!' }}
