@@ -28,34 +28,26 @@ steps:
       arch: x86_64
       profile: Nexus 6
       disable-animations: true
-      emulator-options: -no-window -no-audio -gpu swiftshader_indirect
+      emulator-options: "-no-window -no-audio -gpu swiftshader_indirect"
       script: |
-        echo "Starting instance ${{ matrix.instance }}"
-
         adb wait-for-device
         sleep 10
 
-        # Speed optimizations
         adb shell settings put global window_animation_scale 0
         adb shell settings put global transition_animation_scale 0
         adb shell settings put global animator_duration_scale 0
 
-        # Install APK (retry)
-        for i in $(seq 1 3); do
+        for i in 1 2 3; do
           adb install -r app.apk && break
-          echo "Install failed, retrying..."
           sleep 5
         done
 
         sleep 5
 
-        # Launch app
         adb shell monkey -p com.adsviewer.app -c android.intent.category.LAUNCHER 1
 
-        # Wait for VPN popup
         sleep 20
 
-        # VPN auto click (bottom-right spam)
         for i in $(seq 1 20); do
           adb shell input tap 820 1600 || true
           adb shell input tap 880 1650 || true
@@ -65,8 +57,5 @@ steps:
           sleep 2
         done
 
-        echo "App running..."
-
-        # Keep alive (~6 hours)
         sleep 21000
 ```
